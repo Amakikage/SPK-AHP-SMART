@@ -123,7 +123,7 @@ def sign_in(email: str, password: str) -> tuple[bool, Optional[str]]:
             return False, f"Login gagal: {error_msg}"
 
 
-def sign_up(email: str, password: str, user_metadata: Optional[Dict[str, Any]] = None) -> tuple[bool, Optional[str]]:
+def sign_up(email: str, password: str, user_metadata: Optional[Dict[str, Any]] = None, auto_login: bool = True) -> tuple[bool, Optional[str]]:
     """
     Sign up new user with Supabase
     
@@ -131,6 +131,7 @@ def sign_up(email: str, password: str, user_metadata: Optional[Dict[str, Any]] =
         email: User email
         password: User password
         user_metadata: Optional dictionary with additional user data (fname, lname, etc.)
+        auto_login: If True, automatically login after successful registration
         
     Returns:
         tuple: (success: bool, error_message: Optional[str])
@@ -154,12 +155,25 @@ def sign_up(email: str, password: str, user_metadata: Optional[Dict[str, Any]] =
             
             # Check if user was created
             user = None
+            session = None
+            
             if hasattr(response, 'user'):
                 user = _convert_to_dict(response.user)
             elif response_dict and 'user' in response_dict:
                 user = response_dict['user']
             
+            if hasattr(response, 'session'):
+                session = _convert_to_dict(response.session)
+            elif response_dict and 'session' in response_dict:
+                session = response_dict['session']
+            
             if user:
+                # Auto login if enabled and session exists
+                if auto_login and session:
+                    st.session_state.logged_in = True
+                    st.session_state.user = user
+                    st.session_state.session = session
+                
                 return True, None
             else:
                 return False, "Registrasi gagal"
