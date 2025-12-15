@@ -5,16 +5,16 @@ import numpy as np
 import sys
 from pathlib import Path
 
+# ====================== PATH & AUTH ======================
 parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import auth
-
 auth.initialize_auth_state()
-
 auth.require_auth()
 
+# ====================== SUPABASE ======================
 st_supabase = st.connection(
     name="supabase_connection",
     type=SupabaseConnection,
@@ -52,13 +52,10 @@ n = len(st.session_state.kriteria)
 if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") != n:
     M = np.zeros((n, n)).astype(str)
 
-    # default 1 di diagonal
     for i in range(n):
         for j in range(n):
-            if i == j:
-                M[i][j] = "1"
+            M[i][j] = "1" if i == j else ""
 
-    # jika ada data dari supabase
     if data_supabase and n > 0:
         for i, row in enumerate(data_supabase):
             for j in range(n):
@@ -73,15 +70,11 @@ if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") 
     )
     st.session_state.pairwise_shape = n
 
-# ====================== EDIT MATRIX TAMPILAN STRING ======================
+# ====================== EDIT MATRIX ======================
 st.subheader("Matriks Perbandingan Berpasangan (AHP)")
+pair_str = st.data_editor(st.session_state.pairwise, num_rows="dynamic")
 
-pair_str = st.data_editor(
-    st.session_state.pairwise,
-    num_rows="dynamic"
-)
-
-# konversi ke float untuk perhitungan
+# ====================== KONVERSI KE FLOAT ======================
 M = pair_str.copy()
 for i in range(n):
     for j in range(n):
@@ -92,25 +85,20 @@ for i in range(n):
 
 M = M.astype(float)
 
-# ====================== RECIPROCAL AUTO ======================
+# ====================== RECIPROCAL AUTO (AMAN) ======================
 for i in range(n):
     for j in range(n):
         if i == j:
             M.iat[i, j] = 1.0
-        else:
-            a = M.iat[i, j]
-            b = M.iat[j, i]
+        elif M.iat[i, j] > 0 and M.iat[j, i] == 0:
+            M.iat[j, i] = 1 / M.iat[i, j]
+        elif M.iat[j, i] > 0 and M.iat[i, j] == 0:
+            M.iat[i, j] = 1 / M.iat[j, i]
 
-            if a <= 0 and b > 0:
-                M.iat[i, j] = 1 / b
-            elif b <= 0 and a > 0:
-                M.iat[j, i] = 1 / a
-            elif a <= 0 and b <= 0:
-                M.iat[i, j] = 1.0
-
-# simpan kembali tampilan string tanpa mengubah angka input
-M_display = M.applymap(lambda x: str(int(x)) if x.is_integer() else str(x))
-st.session_state.pairwise = M_display
+# simpan tampilan
+st.session_state.pairwise = M.applymap(
+    lambda x: str(int(x)) if x.is_integer() else str(round(x, 4))
+)
 
 # ====================== SIMPAN ======================
 if st.button("💾 Simpan Matriks ke Database"):
@@ -132,7 +120,7 @@ if st.button("💾 Simpan Matriks ke Database"):
     except Exception as e:
         st.error(f"❌ Error: {e}")
 
-# ====================== HITUNG AHP ======================
+# ====================== HITUNG AHP (VERSI BENAR) ======================
 if st.button("Cek Konsistensi AHP"):
     st.session_state.run_ahp = True
 
@@ -141,29 +129,34 @@ st.subheader("Hasil Perhitungan AHP")
 if not st.session_state.get("run_ahp", False):
     st.info("Tekan tombol untuk menghitung.")
 else:
+    # Normalisasi kolom
     col_sum = M.sum(axis=0)
     norm = M / col_sum
+
+    # Priority vector
     priority = norm.mean(axis=1)
 
-    lambda_max = (M.dot(priority)).sum()
+    # Lambda max (RUMUS BENAR)
+    Aw = M.dot(priority)
+    lambda_max = np.mean(Aw / priority)
+
     CI = (lambda_max - n) / (n - 1)
 
     RI = {1:0.0, 2:0.0, 3:0.58, 4:0.90, 5:1.12}
     CR = CI / RI.get(n, 1.12)
 
-
     df_result = pd.DataFrame({
         "Kriteria": st.session_state.kriteria,
-        "Bobot": [round(w, 4) for w in priority]
+        "Bobot": [round(w, 5) for w in priority]
     })
-    df_result.index = df_result.index + 1  
+    df_result.index = df_result.index + 1
     st.table(df_result)
 
-    st.session_state.bobot_ahp = [round(w, 4) for w in priority]
+    st.session_state.bobot_ahp = priority.tolist()
 
-    st.write(f"λ Max = {lambda_max:.4f}")
-    st.write(f"CI = {CI:.4f}")
-    st.write(f"CR = {CR:.4f}")
+    st.write(f"λ Max = {lambda_max:.5f}")
+    st.write(f"CI = {CI:.5f}")
+    st.write(f"CR = {CR:.5f}")
 
     if CR <= 0.1:
         st.success("Konsisten ✔")
