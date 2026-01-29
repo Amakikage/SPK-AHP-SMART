@@ -21,7 +21,7 @@ st_supabase = st.connection(
     ttl=None,
 )
 
-st.title("1. Data Kriteria (AHP)")
+st.title("Data Kriteria (AHP)")
 
 # ====================== LOAD DATA ======================
 data_supabase = execute_query(
@@ -33,6 +33,8 @@ if isinstance(data_supabase, dict) and "data" in data_supabase:
     data_supabase = data_supabase["data"]
 elif hasattr(data_supabase, "data"):
     data_supabase = data_supabase.data
+else:
+    data_supabase = []
 
 # ====================== KRITERIA ======================
 if "kriteria" not in st.session_state:
@@ -41,12 +43,35 @@ if "kriteria" not in st.session_state:
     else:
         st.session_state.kriteria = []
 
+# ====================== TAMBAH KRITERIA (SEJAJAR) ======================
+st.subheader("Tambah Kriteria")
+
+col1, col2 = st.columns([4, 1])
+with col1:
+    new_kriteria = st.text_input(
+        "Nama Kriteria",
+        key="new_kriteria",
+        label_visibility="collapsed"
+    )
+
+with col2:
+    if st.button("➕ Tambah", use_container_width=True):
+        if new_kriteria.strip() == "":
+            st.warning("Nama kriteria tidak boleh kosong")
+        elif new_kriteria in st.session_state.kriteria:
+            st.warning("Kriteria sudah ada")
+        else:
+            st.session_state.kriteria.append(new_kriteria)
+            st.session_state.pairwise_shape = -1
+            st.success(f"Kriteria '{new_kriteria}' ditambahkan")
+
+# ====================== DAFTAR KRITERIA ======================
 st.subheader("Daftar Kriteria")
 df_k = pd.DataFrame({"Kriteria": st.session_state.kriteria})
 edited_k = st.data_editor(df_k, num_rows="dynamic")
 st.session_state.kriteria = edited_k["Kriteria"].tolist()
 
-# ====================== INIT MATRIX ======================
+# ====================== Bobot AHP ======================
 n = len(st.session_state.kriteria)
 
 if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") != n:
@@ -57,8 +82,12 @@ if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") 
             M[i][j] = "1" if i == j else ""
 
     if data_supabase and n > 0:
-        for i, row in enumerate(data_supabase):
-            for j in range(n):
+        max_baris = min(n, len(data_supabase))
+        max_kolom = min(n, 5)
+
+        for i in range(max_baris):
+            row = data_supabase[i]
+            for j in range(max_kolom):
                 col = f"k{j+1}"
                 if col in row and row[col] is not None:
                     M[i][j] = str(row[col])
@@ -70,8 +99,9 @@ if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") 
     )
     st.session_state.pairwise_shape = n
 
-# ====================== EDIT MATRIX ======================
+# ====================== EDIT MATRIKS  ======================
 st.subheader("Matriks Perbandingan Berpasangan (AHP)")
+
 pair_str = st.data_editor(st.session_state.pairwise, num_rows="dynamic")
 
 # ====================== KONVERSI KE FLOAT ======================
@@ -85,19 +115,18 @@ for i in range(n):
 
 M = M.astype(float)
 
-# ====================== RECIPROCAL AUTO (AMAN) ======================
+# ====================== RECIPROCAL AUTO ======================
 for i in range(n):
     for j in range(n):
         if i == j:
             M.iat[i, j] = 1.0
-        elif M.iat[i, j] > 0 and M.iat[j, i] == 0:
+        elif i < j:
+            if M.iat[i, j] <= 0:
+                M.iat[i, j] = 1.0
             M.iat[j, i] = 1 / M.iat[i, j]
-        elif M.iat[j, i] > 0 and M.iat[i, j] == 0:
-            M.iat[i, j] = 1 / M.iat[j, i]
 
-# simpan tampilan
 st.session_state.pairwise = M.applymap(
-    lambda x: str(int(x)) if x.is_integer() else str(round(x, 4))
+    lambda x: str(int(x)) if float(x).is_integer() else str(round(x, 4))
 )
 
 # ====================== SIMPAN ======================
@@ -108,11 +137,11 @@ if st.button("💾 Simpan Matriks ke Database"):
         for i, krit in enumerate(st.session_state.kriteria):
             row_data = {
                 "kriteria": krit,
-                "k1": float(M.iat[i, 0]),
-                "k2": float(M.iat[i, 1]),
-                "k3": float(M.iat[i, 2]) if n > 2 else 0,
-                "k4": float(M.iat[i, 3]) if n > 3 else 0,
-                "k5": float(M.iat[i, 4]) if n > 4 else 0,
+                "k1": float(M.iat[i, 0]) if n > 0 else 1,
+                "k2": float(M.iat[i, 1]) if n > 1 else 1,
+                "k3": float(M.iat[i, 2]) if n > 2 else 1,
+                "k4": float(M.iat[i, 3]) if n > 3 else 1,
+                "k5": float(M.iat[i, 4]) if n > 4 else 1,
             }
             st_supabase.table("tb_kriteria").insert(row_data).execute()
 
@@ -120,36 +149,54 @@ if st.button("💾 Simpan Matriks ke Database"):
     except Exception as e:
         st.error(f"❌ Error: {e}")
 
-# ====================== HITUNG AHP (VERSI BENAR) ======================
+# ====================== HITUNG AHP ======================
 if st.button("Cek Konsistensi AHP"):
     st.session_state.run_ahp = True
+
+st.subheader("Normalisasi Matriks Perbandingan (Nilai)")
+
+# Jumlah tiap kolom
+col_sum = M.sum(axis=0)
+
+# Normalisasi per kolom
+nilai = M / col_sum
+
+# Tambahkan kolom jumlah per baris
+nilai["Jumlah"] = nilai.sum(axis=1)
+
+# Rapiin tampilan
+nilai = nilai.round(5)
+
+st.table(nilai)
 
 st.subheader("Hasil Perhitungan AHP")
 
 if not st.session_state.get("run_ahp", False):
     st.info("Tekan tombol untuk menghitung.")
 else:
-    # Normalisasi kolom
     col_sum = M.sum(axis=0)
     norm = M / col_sum
 
-    # Priority vector
     priority = norm.mean(axis=1)
 
-    # Lambda max (RUMUS BENAR)
     Aw = M.dot(priority)
     lambda_max = np.mean(Aw / priority)
 
-    CI = (lambda_max - n) / (n - 1)
-
-    RI = {1:0.0, 2:0.0, 3:0.58, 4:0.90, 5:1.12}
-    CR = CI / RI.get(n, 1.12)
+    if n < 3:
+        CI = 0
+        CR = 0
+    else:
+        CI = (lambda_max - n) / n
+        RI = {3: 0.58, 4: 0.90, 5: 1.12}
+        CR = CI / RI.get(n, 1.12)
 
     df_result = pd.DataFrame({
         "Kriteria": st.session_state.kriteria,
-        "Bobot": [round(w, 5) for w in priority]
-    })
-    df_result.index = df_result.index + 1
+        "Bobot": priority.round(5)
+})
+
+    df_result.index = range(1, len(df_result) + 1)
+
     st.table(df_result)
 
     st.session_state.bobot_ahp = priority.tolist()

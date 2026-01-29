@@ -38,37 +38,52 @@ if "bobot_ahp" not in st.session_state:
     st.error("Hitung bobot AHP terlebih dahulu pada halaman Data Kriteria.")
     st.stop()
 
-weights = st.session_state.bobot_ahp.copy()
-pen = st.session_state.penilaian.copy()
+bobot = st.session_state.bobot_ahp.copy()
+penilaian = st.session_state.penilaian.copy()
 
-norm = pen.copy()
+norm = penilaian.copy()
 
+# COST → Harga & Pengiriman
 # COST → Harga & Pengiriman
 for col in ["Harga", "Pengiriman"]:
     v = norm[col].astype(float)
-    norm[col] = (v.max() - v) / (v.max() - v.min())
+    norm[col] = 100 * (v.max() - v) / (v.max() - v.min())
 
 # BENEFIT → 3 Likert
-for col in ["Kualitas","Fleksibilitas","Pelayanan"]:
+for col in ["Kualitas", "Fleksibilitas", "Pelayanan"]:
     v = norm[col].astype(float)
-    norm[col] = (v - v.min()) / (v.max() - v.min())
+    norm[col] = 100 * (v - v.min()) / (v.max() - v.min())
 
-criteria = ["Harga","Kualitas","Pengiriman","Fleksibilitas","Pelayanan"]
-w = np.array(weights)
+criteria = ["Harga", "Kualitas", "Pengiriman", "Fleksibilitas", "Pelayanan"]
+norm[criteria] = norm[criteria].astype(float).round()
 
-scores = (norm[criteria].values * w).sum(axis=1)
+weighted = norm.copy()
 
-result = pd.DataFrame({
-    "Alternatif": pen["Alternatif"],
+for i, col in enumerate(criteria):
+    weighted[col] = weighted[col] * bobot[i]
+
+weighted[criteria] = weighted[criteria].round(5)
+
+\
+
+# ====== PERHITUNGAN NILAI AKHIR ====== 
+scores = (norm[criteria].values * bobot).sum(axis=1)
+scores = np.round(scores , 4)
+
+hasil = pd.DataFrame({
+    "Alternatif": penilaian["Alternatif"],
     "Score": scores,
 })
-result["Rank"] = result["Score"].rank(ascending=False, method="min").astype(int)
-result = result.sort_values("Score", ascending=False)
+hasil["Ranking"] = hasil["Score"].rank(ascending=False, method="min").astype(int)
+hasil = hasil.sort_values("Score", ascending=False)
 
-st.subheader("Normalisasi SMART")
+st.subheader("Nilai Utiliy (SMART)")
 st.table(norm)
 
-st.subheader("Hasil Perhitungan")
-st.table(result)
+st.subheader("Normalisasi Bobot AHP x Nilai Utiliy")
+st.table(weighted[["Alternatif"] + criteria])
 
-st.session_state.hasil = result
+st.subheader("Hasil Perhitungan")
+st.table(hasil)
+
+st.session_state.hasil = hasil

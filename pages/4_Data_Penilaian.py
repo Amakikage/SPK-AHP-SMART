@@ -109,7 +109,4 @@ if st.button("💾 Simpan Data Penilaian ke Database", type="primary", use_conta
 
 st.divider()
 
-st.subheader("Tabel Penilaian")
-result_table = st.session_state.penilaian.copy()
-result_table.index = result_table.index + 1  # Mulai dari 1
-st.table(result_table)
+
