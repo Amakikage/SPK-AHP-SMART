@@ -13,7 +13,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed" if not auth.is_authenticated() else "expanded"
 )
-
 # Hide sidebar on login page
 if not auth.is_authenticated():
     st.markdown("""

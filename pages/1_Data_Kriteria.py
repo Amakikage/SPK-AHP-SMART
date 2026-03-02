@@ -14,6 +14,25 @@ import auth
 auth.initialize_auth_state()
 auth.require_auth()
 
+# ====================== CUSTOM CSS ======================
+st.markdown("""
+<style>
+.card {
+    background-color: #ffffff;
+    padding: 0px;
+    border-radius: 1px;
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    margin-bottom: 25px;
+}
+.section-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ====================== SUPABASE ======================
 st_supabase = st.connection(
     name="supabase_connection",
@@ -21,7 +40,13 @@ st_supabase = st.connection(
     ttl=None,
 )
 
-st.title("Data Kriteria (AHP)")
+# ====================== HEADER ======================
+st.title("⚖️ Data Kriteria (AHP)")
+
+st.markdown("""
+Halaman ini digunakan untuk mengelola **kriteria penilaian** dan menghitung 
+**bobot kriteria menggunakan metode AHP (Analytical Hierarchy Process)**.
+""")
 
 # ====================== LOAD DATA ======================
 data_supabase = execute_query(
@@ -43,8 +68,10 @@ if "kriteria" not in st.session_state:
     else:
         st.session_state.kriteria = []
 
-# ====================== TAMBAH KRITERIA (SEJAJAR) ======================
-st.subheader("Tambah Kriteria")
+# ====================== TAMBAH KRITERIA ======================
+st.markdown('<div class="card">', unsafe_allow_html=True)
+
+st.markdown('<div class="section-title">➕ Tambah Kriteria</div>', unsafe_allow_html=True)
 
 col1, col2 = st.columns([4, 1])
 with col1:
@@ -55,7 +82,7 @@ with col1:
     )
 
 with col2:
-    if st.button("➕ Tambah", use_container_width=True):
+    if st.button("Tambah", use_container_width=True):
         if new_kriteria.strip() == "":
             st.warning("Nama kriteria tidak boleh kosong")
         elif new_kriteria in st.session_state.kriteria:
@@ -65,13 +92,49 @@ with col2:
             st.session_state.pairwise_shape = -1
             st.success(f"Kriteria '{new_kriteria}' ditambahkan")
 
-# ====================== DAFTAR KRITERIA ======================
-st.subheader("Daftar Kriteria")
-df_k = pd.DataFrame({"Kriteria": st.session_state.kriteria})
-edited_k = st.data_editor(df_k, num_rows="dynamic")
-st.session_state.kriteria = edited_k["Kriteria"].tolist()
+st.markdown('</div>', unsafe_allow_html=True)
 
-# ====================== Bobot AHP ======================
+# ====================== LAYOUT 2 KOLOM ======================
+col_kiri, col_kanan = st.columns(2, gap="large")
+
+# ====================== KOLOM KIRI ======================
+with col_kiri:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📋 Daftar Kriteria</div>', unsafe_allow_html=True)
+
+    df_k = pd.DataFrame({"Kriteria": st.session_state.kriteria})
+    edited_k = st.data_editor(df_k, num_rows="dynamic")
+    st.session_state.kriteria = edited_k["Kriteria"].tolist()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ====================== KOLOM KANAN ======================
+with col_kanan:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📏 Skala Perbandingan AHP (Saaty 1–9)</div>', unsafe_allow_html=True)
+
+    skala_df = pd.DataFrame({
+        "Nilai": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        "Keterangan": [
+            "Sama penting",
+            "Mendekati sedikit lebih penting",
+            "Sedikit lebih penting",
+            "Mendekati lebih penting",
+            "Lebih penting",
+            "Mendekati sangat lebih penting",
+            "Sangat lebih penting",
+            "Mendekati mutlak",
+            "Mutlak sangat penting"
+        ]
+    })
+
+    st.table(skala_df)
+
+    st.info("Jika A lebih penting dari B dengan nilai 5, maka B terhadap A otomatis bernilai 1/5.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ====================== MATRIKS AHP ======================
 n = len(st.session_state.kriteria)
 
 if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") != n:
@@ -99,12 +162,12 @@ if "pairwise" not in st.session_state or st.session_state.get("pairwise_shape") 
     )
     st.session_state.pairwise_shape = n
 
-# ====================== EDIT MATRIKS  ======================
-st.subheader("Matriks Perbandingan Berpasangan (AHP)")
+st.markdown('<div class="card">', unsafe_allow_html=True)
+st.markdown('<div class="section-title">📊 Matriks Perbandingan Berpasangan</div>', unsafe_allow_html=True)
 
 pair_str = st.data_editor(st.session_state.pairwise, num_rows="dynamic")
 
-# ====================== KONVERSI KE FLOAT ======================
+# ====================== KONVERSI ======================
 M = pair_str.copy()
 for i in range(n):
     for j in range(n):
@@ -115,7 +178,7 @@ for i in range(n):
 
 M = M.astype(float)
 
-# ====================== RECIPROCAL AUTO ======================
+# ====================== RECIPROCAL ======================
 for i in range(n):
     for j in range(n):
         if i == j:
@@ -128,6 +191,8 @@ for i in range(n):
 st.session_state.pairwise = M.applymap(
     lambda x: str(int(x)) if float(x).is_integer() else str(round(x, 4))
 )
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ====================== SIMPAN ======================
 if st.button("💾 Simpan Matriks ke Database"):
@@ -149,34 +214,20 @@ if st.button("💾 Simpan Matriks ke Database"):
     except Exception as e:
         st.error(f"❌ Error: {e}")
 
+# ====================== NORMALISASI ======================
+st.subheader("Normalisasi Matriks")
+col_sum = M.sum(axis=0)
+nilai = M / col_sum
+nilai["Jumlah"] = nilai.sum(axis=1)
+nilai = nilai.round(5)
+st.table(nilai)
+
 # ====================== HITUNG AHP ======================
 if st.button("Cek Konsistensi AHP"):
     st.session_state.run_ahp = True
 
-st.subheader("Normalisasi Matriks Perbandingan (Nilai)")
-
-# Jumlah tiap kolom
-col_sum = M.sum(axis=0)
-
-# Normalisasi per kolom
-nilai = M / col_sum
-
-# Tambahkan kolom jumlah per baris
-nilai["Jumlah"] = nilai.sum(axis=1)
-
-# Rapiin tampilan
-nilai = nilai.round(5)
-
-st.table(nilai)
-
-st.subheader("Hasil Perhitungan AHP")
-
-if not st.session_state.get("run_ahp", False):
-    st.info("Tekan tombol untuk menghitung.")
-else:
-    col_sum = M.sum(axis=0)
-    norm = M / col_sum
-
+if st.session_state.get("run_ahp", False):
+    norm = M / M.sum(axis=0)
     priority = norm.mean(axis=1)
 
     Aw = M.dot(priority)
@@ -186,21 +237,16 @@ else:
         CI = 0
         CR = 0
     else:
-        CI = (lambda_max - n) / n
+        CI = (lambda_max - n) / (n)
         RI = {3: 0.58, 4: 0.90, 5: 1.12}
         CR = CI / RI.get(n, 1.12)
 
     df_result = pd.DataFrame({
         "Kriteria": st.session_state.kriteria,
         "Bobot": priority.round(5)
-})
-
-    df_result.index = range(1, len(df_result) + 1)
+    })
 
     st.table(df_result)
-
-    st.session_state.bobot_ahp = priority.tolist()
-
     st.write(f"λ Max = {lambda_max:.5f}")
     st.write(f"CI = {CI:.5f}")
     st.write(f"CR = {CR:.5f}")
@@ -209,3 +255,5 @@ else:
         st.success("Konsisten ✔")
     else:
         st.error("Tidak konsisten ❌")
+
+    st.session_state.bobot_ahp = priority.values
